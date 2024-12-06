@@ -1,22 +1,26 @@
 # Build paths
-PROJECT_NAME = "jmamma"
+PROJECT_NAME = jmamma
+
+BUILD_CHIP = rp2040
+VARIANT := rpipicow
+FLASH_LAYOUT := 2097152_0# 2MB, no filesystem
 
 ARDUINO_PICO_ROOT = $(realpath ../..)
-CORES_PATH = $(ARDUINO_PICO_ROOT)/cores/rp2040
-LIB_PATH = $(ARDUINO_PICO_ROOT)/lib/rp2040
-BOOT2_PATH = $(ARDUINO_PICO_ROOT)/boot2/rp2040
+CORE_PATH = $(ARDUINO_PICO_ROOT)/cores/$(BUILD_CHIP)
+LIB_PATH = $(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)
+BOOT2_PATH = $(ARDUINO_PICO_ROOT)/boot2/$(BUILD_CHIP)
 
 # Arduino toolchain paths for macOS
 ARDUINO_PATH = $(HOME)/Library/Arduino15
-TOOLS_PATH = $(ARDUINO_PATH)/packages/rp2040/tools
+TOOLS_PATH = $(ARDUINO_PATH)/packages/$(BUILD_CHIP)/tools
 GCC_PATH = $(wildcard $(TOOLS_PATH)/pqt-gcc/*/bin)
 
-FLASH_LAYOUT := 2097152_0# 2MB, no filesystem
-
 BUILD_DIR = build
-BUILD_CHIP = rp2040
+
+BUILD_LIBPICO=libpico.a
+BUILD_LIBPICOW=libipv4.a
+
 # Board variant
-VARIANT := rpipicow
 VARIANTS_DIR = $(ARDUINO_PICO_ROOT)/variants/$(VARIANT)
 
 # Get just the values, removing any -D prefix
@@ -58,7 +62,7 @@ OBJCOPY := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)objcopy
 SIZE := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)size
 READELF := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)readelf
 PYTHON3 := python3
-PICOTOOL := $(TOOLS_PATH)/picotool/picotool
+PICOTOOL := $(wildcard $(TOOLS_PATH)/pqt-picotool/*/picotool)
 
 # Common flags
 WARNING_FLAGS := -Werror=return-type -Wno-psabi
@@ -85,14 +89,22 @@ DEFINES := $(BUILD_USBVID) \
 INCLUDES := -iprefix$(ARDUINO_PICO_ROOT)/ \
            @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_inc.txt \
            @$(ARDUINO_PICO_ROOT)/lib/core_inc.txt \
-           -I$(CORES_PATH) \
+           -I$(CORE_PATH) \
            -I$(VARIANTS_DIR)
 
            #-I$(ARDUINO_PICO_ROOT)/include \
-# Source files
-SRCS = $(wildcard *.cpp *.c)
-OBJS = $(SRCS:%.cpp=$(BUILD_DIR)/%.o)
 
+rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
+
+#C_SRCS = $(call rwildcard,$(CORE_PATH),*.c)
+C_SRCS = $(filter-out $(CORE_PATH)/sdkoverride/%,$(call rwildcard,$(CORE_PATH),*.c))
+
+CPP_SRCS = $(call rwildcard,$(CORE_PATH),*.cpp)
+
+CPP_OBJS = $(patsubst $(CORE_PATH)/%.cpp,$(CORE_PATH)/$(BUILD_DIR)/%.o,$(CPP_SRCS))
+C_OBJS = $(patsubst $(CORE_PATH)/%.c,$(CORE_PATH)/$(BUILD_DIR)/%.o,$(C_SRCS))
+
+OBJS = $(CPP_OBJS) $(C_OBJS)
 # Compiler flags
 COMMON_FLAGS := $(BUILD_TOOLCHAINOPTS) -ffunction-sections -fdata-sections $(BUILD_FLAGS_EXCEPTIONS) \
                $(BUILD_FLAGS_STACKPROTECT) $(BUILD_PICODEBUGFLAGS)
@@ -107,6 +119,7 @@ CFLAGS := -c $(WARNING_FLAGS) $(DEFINES) $(COMMON_FLAGS) -MMD $(INCLUDES) -std=g
 # C++ specific flags
 CXXFLAGS := -c $(WARNING_FLAGS) $(BUILD_USBVID) $(BUILD_USBPID) $(BUILD_USBPWR) $(DEFINES) $(COMMON_FLAGS) -MMD $(INCLUDES) $(BUILD_FLAGS_RTTI) -std=gnu++17 -g -pipe
 # Linker flags
+
 LDFLAGS := $(WRAP_FLAGS) -Wl,--cref -Wl,--check-sections -Wl,--gc-sections \
           -Wl,--unresolved-symbols=report-all -Wl,--warn-common \
           -Wl,--undefined=runtime_init_install_ram_vector_table \
@@ -142,7 +155,9 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 # Compile C sources
-$(BUILD_DIR)/%.o: %.c
+
+$(CORE_PATH)/$(BUILD_DIR)/%.o: $(CORE_PATH)/%.c
+	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -DF_CPU=$(BUILD_F_CPU) $(BUILD_ESPWIFITYPE) \
 	-DARDUINO=$(RUNTIME_IDE_VERSION) -DARDUINO_$(BUILD_BOARD) \
 	-DBOARD_NAME="$(BUILD_BOARD)" -DARDUINO_ARCH_$(BUILD_ARCH) \
@@ -150,22 +165,32 @@ $(BUILD_DIR)/%.o: %.c
 	$(BUILD_FLAGS_OPTIMIZE) $< -o $@
 
 # Compile C++ sources
-$(BUILD_DIR)/%.o: %.cpp
+$(CORE_PATH)/$(BUILD_DIR)/%.o: $(CORE_PATH)/%.cpp
+	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -DF_CPU=$(BUILD_F_CPU) $(BUILD_ESPWIFITYPE) \
 	-DARDUINO=$(RUNTIME_IDE_VERSION) -DARDUINO_$(BUILD_BOARD) \
 	-DBOARD_NAME="$(BUILD_BOARD)" -DARDUINO_ARCH_$(BUILD_ARCH) \
 	$(BUILD_EXTRA_FLAGS) $(BUILD_DEBUG_PORT) $(BUILD_DEBUG_LEVEL) \
 	$(BUILD_FLAGS_OPTIMIZE) $(BUILD_WIFICC) $< -o $@
 
+## Combine gc-sections, archives, and objects
+#recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" "-L{build.path}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} {compiler.ldflags} "-Wl,--script={build.path}/memmap_default.ld" "-Wl,-Map,{build.path}/{build.project_name}.map" -o "{build.path}/{build.project_name}.elf" -Wl,--no-warn-rwx-segments -Wl,--start-group {object_files} "{build.path}/{archive_file}" "{build.path}/boot2.o" "{runtime.platform.path}/lib/{build.chip}/ota.o" {compiler.libraries.ldflags} "{runtime.platform.path}/lib/{build.chip}/{build.libpico}" "{runtime.platform.path}/lib/{build.chip}/{build.libpicow}"  {compiler.libbearssl} -lm -lc {build.flags.libstdcpp} -lc -Wl,--end-group
+
 # Link
 $(BUILD_DIR)/$(PROJECT_NAME).elf: $(OBJS) $(BUILD_DIR)/boot2.o $(BUILD_DIR)/memmap_default.ld
 	$(CXX) -L$(BUILD_DIR) $(COMMON_FLAGS) $(LDFLAGS) \
 	-Wl,--script=$(BUILD_DIR)/memmap_default.ld \
 	-Wl,-Map,$(BUILD_DIR)/$(PROJECT_NAME).map \
-	-o $@ -Wl,--start-group \
+	-o $@ -Wl,--no-warn-rwx-segments -Wl,--start-group \
 	$(OBJS) $(BUILD_DIR)/boot2.o \
 	$(LIB_PATH)/ota.o \
 	$(PICO_LIBS) $(BEARSSL_LIB) $(LIBS) -Wl,--end-group
+
+	#$(OBJS) $(BUILD_DIR)/core.a $(BUILD_DIR)/boot2.o \
+
+$(BUILD_DIR)/core.a: $(OBJS)
+	echo $(AR) rcs $@ $^
+	$(AR) rcs $@ $^
 
 # Create UF2
 $(BUILD_DIR)/$(PROJECT_NAME).uf2: $(BUILD_DIR)/$(PROJECT_NAME).elf
