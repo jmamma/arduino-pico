@@ -1,6 +1,9 @@
 # Build paths
 PROJECT_NAME = jmamma
 
+RUNTIME_IDE_VERSION := 10607
+BUILD_ARCH := RP2040
+
 BUILD_CHIP = rp2040
 VARIANT := rpipicow
 FLASH_LAYOUT := 2097152_0# 2MB, no filesystem
@@ -53,6 +56,10 @@ BUILD_PSRAM_LENGTH := 0
 EXCEPTIONS = Disabled
 BUILD_FLAGS_EXCEPTIONS := $(shell grep "$(VARIANT).menu.exceptions.$(EXCEPTIONS).build.flags.exceptions" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
 BUILD_FLAGS_LIBSTDCPP := $(shell grep "$(VARIANT).menu.exceptions.$(EXCEPTIONS).build.flags.libstdcpp" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
+
+BUILD_LED_PIN := $(shell grep "$(VARIANT).build.led_defines" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f3-)
+
+
 # Toolchain configuration
 TOOLCHAIN_PREFIX := arm-none-eabi-
 CC := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)gcc
@@ -73,7 +80,6 @@ WARNING_FLAGS_ALL := -Wall -Wextra -Werror=return-type -Wno-ignored-qualifiers -
 NET_DEFINES := $(BUILD_LIBPICOWDEFS) -DLWIP_IGMP=1 -DLWIP_CHECKSUM_CTRL_PER_NETIF=1
 PSRAM_DEFINES := $(BUILD_PSRAM_CS) $(BUILD_PSRAM_FREQ)
 
-# Common defines - all in -DVAR=VALUE format
 DEFINES := $(BUILD_USBVID) \
           $(BUILD_USBPID) \
           $(BUILD_USBPWR) \
@@ -84,6 +90,15 @@ DEFINES := $(BUILD_USBVID) \
           $(BUILD_VARIANTDEFINES) \
           -DARDUINO_VARIANT="$(VARIANT)" \
           -DPICO_FLASH_SIZE_BYTES=$(BUILD_FLASH_TOTAL) \
+          $(BUILD_EXTRA_FLAGS) \
+          -DF_CPU=$(BUILD_F_CPU) \
+          -DARDUINO=$(RUNTIME_IDE_VERSION) \
+          -DARDUINO_$(BUILD_BOARD) \
+          -DBOARD_NAME="$(BUILD_BOARD)" \
+          -DARDUINO_ARCH_$(BUILD_ARCH) \
+          $(BUILD_DEBUG_PORT) \
+          $(BUILD_DEBUG_LEVEL) \
+          -DWIFICC=CYW43_COUNTRY_WORLDWIDE \
           @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_def.txt
 # Include paths exactly as in the original command
 INCLUDES := -iprefix$(ARDUINO_PICO_ROOT)/ \
@@ -104,7 +119,13 @@ CPP_SRCS = $(call rwildcard,$(CORE_PATH),*.cpp)
 CPP_OBJS = $(patsubst $(CORE_PATH)/%.cpp,$(CORE_PATH)/$(BUILD_DIR)/%.o,$(CPP_SRCS))
 C_OBJS = $(patsubst $(CORE_PATH)/%.c,$(CORE_PATH)/$(BUILD_DIR)/%.o,$(C_SRCS))
 
-OBJS = $(CPP_OBJS) $(C_OBJS)
+# Variant sources
+VARIANT_CPP_SRCS = $(wildcard $(VARIANTS_DIR)/*.cpp)
+VARIANT_CPP_OBJS = $(patsubst $(VARIANTS_DIR)/%.cpp,$(VARIANTS_DIR)/$(BUILD_DIR)/%.o,$(VARIANT_CPP_SRCS))
+
+# Add variant objects to the list
+OBJS = $(CPP_OBJS) $(C_OBJS) $(VARIANT_CPP_OBJS)
+
 # Compiler flags
 COMMON_FLAGS := $(BUILD_TOOLCHAINOPTS) -ffunction-sections -fdata-sections $(BUILD_FLAGS_EXCEPTIONS) \
                $(BUILD_FLAGS_STACKPROTECT) $(BUILD_PICODEBUGFLAGS)
@@ -116,8 +137,8 @@ WRAP_FLAGS := @$(LIB_PATH)/platform_wrap.txt \
 # C specific flags
 CFLAGS := -c $(WARNING_FLAGS) $(DEFINES) $(COMMON_FLAGS) -MMD $(INCLUDES) -std=gnu17 -g -pipe
 
-# C++ specific flags
-CXXFLAGS := -c $(WARNING_FLAGS) $(BUILD_USBVID) $(BUILD_USBPID) $(BUILD_USBPWR) $(DEFINES) $(COMMON_FLAGS) -MMD $(INCLUDES) $(BUILD_FLAGS_RTTI) -std=gnu++17 -g -pipe
+CXXFLAGS := -c $(WARNING_FLAGS) $(DEFINES) $(COMMON_FLAGS) -MMD $(INCLUDES) $(BUILD_FLAGS_RTTI) -std=gnu++17 -g -pipe
+
 # Linker flags
 
 LDFLAGS := $(WRAP_FLAGS) -Wl,--cref -Wl,--check-sections -Wl,--gc-sections \
@@ -147,34 +168,27 @@ PICO_LIBS := $(LIB_PATH)/$(BUILD_LIBPICO) \
 UF2_FAMILY ?= $(BUILD_UF2FAMILY)
 
 # Build rules
-.PHONY: all clean
+.PHONY: all clean upload
 
-all: $(BUILD_DIR) $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT_NAME).bin.signed
+all: $(BUILD_DIR) $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT_NAME).bin.signed upload
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 # Compile C sources
-
+# Compile C sources
 $(CORE_PATH)/$(BUILD_DIR)/%.o: $(CORE_PATH)/%.c
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DF_CPU=$(BUILD_F_CPU) $(BUILD_ESPWIFITYPE) \
-	-DARDUINO=$(RUNTIME_IDE_VERSION) -DARDUINO_$(BUILD_BOARD) \
-	-DBOARD_NAME="$(BUILD_BOARD)" -DARDUINO_ARCH_$(BUILD_ARCH) \
-	$(BUILD_EXTRA_FLAGS) $(BUILD_DEBUG_PORT) $(BUILD_DEBUG_LEVEL) \
-	$(BUILD_FLAGS_OPTIMIZE) $< -o $@
+	$(CC) $(CFLAGS) $< -o $@
 
 # Compile C++ sources
 $(CORE_PATH)/$(BUILD_DIR)/%.o: $(CORE_PATH)/%.cpp
 	mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -DF_CPU=$(BUILD_F_CPU) $(BUILD_ESPWIFITYPE) \
-	-DARDUINO=$(RUNTIME_IDE_VERSION) -DARDUINO_$(BUILD_BOARD) \
-	-DBOARD_NAME="$(BUILD_BOARD)" -DARDUINO_ARCH_$(BUILD_ARCH) \
-	$(BUILD_EXTRA_FLAGS) $(BUILD_DEBUG_PORT) $(BUILD_DEBUG_LEVEL) \
-	$(BUILD_FLAGS_OPTIMIZE) $(BUILD_WIFICC) $< -o $@
+	$(CXX) $(CXXFLAGS) $< -o $@
 
-## Combine gc-sections, archives, and objects
-#recipe.c.combine.pattern="{compiler.path}{compiler.c.elf.cmd}" "-L{build.path}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} {compiler.ldflags} "-Wl,--script={build.path}/memmap_default.ld" "-Wl,-Map,{build.path}/{build.project_name}.map" -o "{build.path}/{build.project_name}.elf" -Wl,--no-warn-rwx-segments -Wl,--start-group {object_files} "{build.path}/{archive_file}" "{build.path}/boot2.o" "{runtime.platform.path}/lib/{build.chip}/ota.o" {compiler.libraries.ldflags} "{runtime.platform.path}/lib/{build.chip}/{build.libpico}" "{runtime.platform.path}/lib/{build.chip}/{build.libpicow}"  {compiler.libbearssl} -lm -lc {build.flags.libstdcpp} -lc -Wl,--end-group
+$(VARIANTS_DIR)/$(BUILD_DIR)/%.o: $(VARIANTS_DIR)/%.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $< -o $@
 
 # Link
 $(BUILD_DIR)/$(PROJECT_NAME).elf: $(OBJS) $(BUILD_DIR)/boot2.o $(BUILD_DIR)/memmap_default.ld
@@ -191,6 +205,11 @@ $(BUILD_DIR)/$(PROJECT_NAME).elf: $(OBJS) $(BUILD_DIR)/boot2.o $(BUILD_DIR)/memm
 $(BUILD_DIR)/core.a: $(OBJS)
 	echo $(AR) rcs $@ $^
 	$(AR) rcs $@ $^
+
+upload: $(BUILD_DIR)/$(PROJECT_NAME).uf2
+	echo "Uploading: $<"
+	$(PICOTOOL) load -f -x $<
+	$(PICOTOOL) reboot
 
 # Create UF2
 $(BUILD_DIR)/$(PROJECT_NAME).uf2: $(BUILD_DIR)/$(PROJECT_NAME).elf
