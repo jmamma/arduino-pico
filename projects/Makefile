@@ -102,12 +102,18 @@ DEFINES := $(BUILD_USBVID) \
           $(BUILD_DEBUG_LEVEL) \
           -DWIFICC=CYW43_COUNTRY_WORLDWIDE \
           @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_def.txt
+
+LIB_SRCS := $(shell find $(CURDIR)/libraries -type d -name src)
+LIB_SRCS += $(shell find $(ARDUINO_PICO_ROOT)/libraries -type d -name src)
+LIB_INCLUDES := $(addprefix -I,$(LIB_SRCS))
+
 # Include paths exactly as in the original command
 INCLUDES := -iprefix$(ARDUINO_PICO_ROOT)/ \
            @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_inc.txt \
            @$(ARDUINO_PICO_ROOT)/lib/core_inc.txt \
-           -I$(CORE_PATH) -I$(VARIANTS_DIR) -I$(SRC_DIR) -I$(LIB_DIR)
-
+           -I$(CORE_PATH) -I$(VARIANTS_DIR) \
+           -I$(CURDIR)/$(SRC_DIR) \
+           $(LIB_INCLUDES)
            #-I$(ARDUINO_PICO_ROOT)/include \
 
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
@@ -128,7 +134,6 @@ LIB_CPP_FILES = $(call rwildcard,$(LIB_DIR),*.cpp)
 C_SRCS = $(CORE_C_FILES) $(SRC_C_FILES) $(LIB_C_FILES)
 CPP_SRCS = $(CORE_CPP_FILES) $(SRC_CPP_FILES) $(LIB_CPP_FILES)
 
-# Generate object file paths
 C_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SRCS))
 CPP_OBJS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(CPP_SRCS))
 
@@ -188,12 +193,10 @@ all: $(BUILD_DIR) $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT_NAME).
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Unified rule for C sources
 $(BUILD_DIR)/%.o: %.c
-	 mkdir -p $(dir $@)
+	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< -o $@
 
-# Unified rule for C++ sources
 $(BUILD_DIR)/%.o: %.cpp
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $< -o $@
