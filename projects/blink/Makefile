@@ -1,5 +1,5 @@
 # Build paths
-PROJECT_NAME = jmamma
+PROJECT_NAME = $(notdir $(CURDIR))
 
 RUNTIME_IDE_VERSION := 10607
 BUILD_ARCH := RP2040
@@ -18,6 +18,8 @@ ARDUINO_PATH = $(HOME)/Library/Arduino15
 TOOLS_PATH = $(ARDUINO_PATH)/packages/$(BUILD_CHIP)/tools
 GCC_PATH = $(wildcard $(TOOLS_PATH)/pqt-gcc/*/bin)
 
+SRC_DIR = src
+LIB_DIR = libraries
 BUILD_DIR = build
 
 BUILD_LIBPICO=libpico.a
@@ -104,20 +106,31 @@ DEFINES := $(BUILD_USBVID) \
 INCLUDES := -iprefix$(ARDUINO_PICO_ROOT)/ \
            @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_inc.txt \
            @$(ARDUINO_PICO_ROOT)/lib/core_inc.txt \
-           -I$(CORE_PATH) \
-           -I$(VARIANTS_DIR)
+           -I$(CORE_PATH) -I$(VARIANTS_DIR) -I$(SRC_DIR) -I$(LIB_DIR)
 
            #-I$(ARDUINO_PICO_ROOT)/include \
 
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
 
-#C_SRCS = $(call rwildcard,$(CORE_PATH),*.c)
-C_SRCS = $(filter-out $(CORE_PATH)/sdkoverride/%,$(call rwildcard,$(CORE_PATH),*.c))
 
-CPP_SRCS = $(call rwildcard,$(CORE_PATH),*.cpp)
+# Find all source files
+#CORE_C_FILES = $(call rwildcard,$(CORE_PATH),*.c)
+CORE_C_FILES = $(filter-out $(CORE_PATH)/sdkoverride/%,$(call rwildcard,$(CORE_PATH),*.c))
+CORE_CPP_FILES = $(call rwildcard,$(CORE_PATH),*.cpp)
 
-CPP_OBJS = $(patsubst $(CORE_PATH)/%.cpp,$(CORE_PATH)/$(BUILD_DIR)/%.o,$(CPP_SRCS))
-C_OBJS = $(patsubst $(CORE_PATH)/%.c,$(CORE_PATH)/$(BUILD_DIR)/%.o,$(C_SRCS))
+SRC_C_FILES = $(call rwildcard,$(SRC_DIR),*.c)
+SRC_CPP_FILES = $(call rwildcard,$(SRC_DIR),*.cpp)
+
+LIB_C_FILES = $(call rwildcard,$(LIB_DIR),*.c)
+LIB_CPP_FILES = $(call rwildcard,$(LIB_DIR),*.cpp)
+
+# Combine all sources
+C_SRCS = $(CORE_C_FILES) $(SRC_C_FILES) $(LIB_C_FILES)
+CPP_SRCS = $(CORE_CPP_FILES) $(SRC_CPP_FILES) $(LIB_CPP_FILES)
+
+# Generate object file paths
+C_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SRCS))
+CPP_OBJS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(CPP_SRCS))
 
 # Variant sources
 VARIANT_CPP_SRCS = $(wildcard $(VARIANTS_DIR)/*.cpp)
@@ -175,18 +188,13 @@ all: $(BUILD_DIR) $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT_NAME).
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Compile C sources
-# Compile C sources
-$(CORE_PATH)/$(BUILD_DIR)/%.o: $(CORE_PATH)/%.c
-	mkdir -p $(dir $@)
+# Unified rule for C sources
+$(BUILD_DIR)/%.o: %.c
+	 mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< -o $@
 
-# Compile C++ sources
-$(CORE_PATH)/$(BUILD_DIR)/%.o: $(CORE_PATH)/%.cpp
-	mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $< -o $@
-
-$(VARIANTS_DIR)/$(BUILD_DIR)/%.o: $(VARIANTS_DIR)/%.cpp
+# Unified rule for C++ sources
+$(BUILD_DIR)/%.o: %.cpp
 	mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $< -o $@
 
