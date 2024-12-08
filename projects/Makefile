@@ -101,39 +101,62 @@ DEFINES := $(BUILD_USBVID) \
           $(BUILD_DEBUG_PORT) \
           $(BUILD_DEBUG_LEVEL) \
           -DWIFICC=CYW43_COUNTRY_WORLDWIDE \
+          -DUSE_TINYUSB \
+          -DENABLE_CLASSIC \
           @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_def.txt
-
-LIB_SRCS := $(shell find $(CURDIR)/libraries -type d -name src)
-LIB_SRCS += $(shell find $(ARDUINO_PICO_ROOT)/libraries -type d -name src)
-LIB_INCLUDES := $(addprefix -I,$(LIB_SRCS))
-
-# Include paths exactly as in the original command
-INCLUDES := -iprefix$(ARDUINO_PICO_ROOT)/ \
-           @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_inc.txt \
-           @$(ARDUINO_PICO_ROOT)/lib/core_inc.txt \
-           -I$(CORE_PATH) -I$(VARIANTS_DIR) \
-           -I$(CURDIR)/$(SRC_DIR) \
-           $(LIB_INCLUDES)
-           #-I$(ARDUINO_PICO_ROOT)/include \
 
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
 
+# Base required libraries
+LIB_SRCS := $(ARDUINO_PICO_ROOT)/libraries/SdFat/src \
+            $(ARDUINO_PICO_ROOT)/libraries/SPI/src \
+            $(ARDUINO_PICO_ROOT)/libraries/Wire/src \
+            $(ARDUINO_PICO_ROOT)/libraries/rp2040/src \
+            $(ARDUINO_PICO_ROOT)/libraries/EEPROM/src \
+            $(LIB_DIR)
 
-# Find all source files
-#CORE_C_FILES = $(call rwildcard,$(CORE_PATH),*.c)
+# Remove any non-existent paths
+LIB_SRCS := $(wildcard $(LIB_SRCS))
+
+# Generate include paths
+LIB_INCLUDES := $(addprefix -I,$(LIB_SRCS))
+
+# Special handling for TinyUSB
+TINYUSB_PATH := $(ARDUINO_PICO_ROOT)/libraries/Adafruit_TinyUSB_Arduino
+TINYUSB_C_FILES := $(call rwildcard,$(TINYUSB_PATH)/src,*.c)
+TINYUSB_CPP_FILES := $(call rwildcard,$(TINYUSB_PATH)/src,*.cpp)
+
+# Include paths
+INCLUDES := -iprefix$(ARDUINO_PICO_ROOT)/ \
+           @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_inc.txt \
+           @$(ARDUINO_PICO_ROOT)/lib/core_inc.txt \
+           -I$(ARDUINO_PICO_ROOT)/include/$(BUILD_CHIP) \
+           -I$(CORE_PATH) -I$(VARIANTS_DIR) \
+           -I$(CURDIR)/$(SRC_DIR) \
+		   -I$(TINYUSB_PATH)/src \
+           -I$(TINYUSB_PATH)/src/arduino \
+           $(LIB_INCLUDES)
+
+# Core files (excluding sdkoverride)
 CORE_C_FILES = $(filter-out $(CORE_PATH)/sdkoverride/%,$(call rwildcard,$(CORE_PATH),*.c))
 CORE_CPP_FILES = $(call rwildcard,$(CORE_PATH),*.cpp)
 
+# Source directory files
 SRC_C_FILES = $(call rwildcard,$(SRC_DIR),*.c)
 SRC_CPP_FILES = $(call rwildcard,$(SRC_DIR),*.cpp)
 
-LIB_C_FILES = $(call rwildcard,$(LIB_DIR),*.c)
-LIB_CPP_FILES = $(call rwildcard,$(LIB_DIR),*.cpp)
+# Library files
+LIB_C_FILES := $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*.c)) \
+               $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*/*.c))
+
+LIB_CPP_FILES := $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*.cpp)) \
+                 $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*/*.cpp))
 
 # Combine all sources
-C_SRCS = $(CORE_C_FILES) $(SRC_C_FILES) $(LIB_C_FILES)
-CPP_SRCS = $(CORE_CPP_FILES) $(SRC_CPP_FILES) $(LIB_CPP_FILES)
+C_SRCS = $(CORE_C_FILES) $(SRC_C_FILES) $(LIB_C_FILES) $(TINYUSB_C_FILES)
+CPP_SRCS = $(CORE_CPP_FILES) $(SRC_CPP_FILES) $(LIB_CPP_FILES) $(TINYUSB_CPP_FILES)
 
+# Generate object files
 C_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SRCS))
 CPP_OBJS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(CPP_SRCS))
 
