@@ -133,9 +133,13 @@ INCLUDES := -iprefix$(ARDUINO_PICO_ROOT)/ \
            -I$(ARDUINO_PICO_ROOT)/include/$(BUILD_CHIP) \
            -I$(CORE_PATH) -I$(VARIANTS_DIR) \
            -I$(CURDIR)/$(SRC_DIR) \
-		   -I$(TINYUSB_PATH)/src \
+           -I$(TINYUSB_PATH)/src \
            -I$(TINYUSB_PATH)/src/arduino \
            $(LIB_INCLUDES)
+
+# Automatically find and add all subdirectories under SRC_DIR
+SRC_SUBDIRS := $(shell find $(CURDIR)/$(SRC_DIR) -type d)
+INCLUDES += $(addprefix -I,$(SRC_SUBDIRS))
 
 # Core files (excluding sdkoverride)
 CORE_C_FILES = $(filter-out $(CORE_PATH)/sdkoverride/%,$(call rwildcard,$(CORE_PATH),*.c))
