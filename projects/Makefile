@@ -286,5 +286,12 @@ print-flash-debug:
 	@echo "Search string: $(VARIANT).menu.flash.$(FLASH_LAYOUT).build.flash_total"
 	@echo "Searching in $(ARDUINO_PICO_ROOT)/boards.txt:"
 	@grep "$(VARIANT).menu.flash.$(FLASH_LAYOUT)" $(ARDUINO_PICO_ROOT)/boards.txt
-clean:
+clean-all:
 	rm -rf $(BUILD_DIR)
+clean:
+	rm -rf $(BUILD_DIR)/$(SRC_DIR)
+	rm -f $(BUILD_DIR)/$(PROJECT_NAME).elf
+	rm -f $(BUILD_DIR)/$(PROJECT_NAME).uf2
+	rm -f $(BUILD_DIR)/$(PROJECT_NAME).bin
+	rm -f $(BUILD_DIR)/$(PROJECT_NAME).bin.signed
+	rm -f $(BUILD_DIR)/$(PROJECT_NAME).map
