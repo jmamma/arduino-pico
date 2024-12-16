@@ -49,3 +49,9 @@
 [submodule "libraries/ESPHost"]
 	path = libraries/ESPHost
 	url = https://github.com/Networking-for-Arduino/ESPHost.git
+[submodule "projects/mcl/lib/Adafruit_GFX"]
+	path = projects/mcl/lib/Adafruit_GFX
+	url = https://github.com/adafruit/Adafruit-GFX-Library.git
+[submodule "projects/mcl/lib/Adafruit_SSD1305"]
+	path = projects/mcl/lib/Adafruit_SSD1305
+	url = https://github.com/adafruit/Adafruit_SSD1305
