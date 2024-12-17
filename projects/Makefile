@@ -19,7 +19,6 @@ TOOLS_PATH = $(ARDUINO_PATH)/packages/$(BUILD_CHIP)/tools
 GCC_PATH = $(wildcard $(TOOLS_PATH)/pqt-gcc/*/bin)
 
 SRC_DIR = src
-LIB_DIR = libraries
 BUILD_DIR = build
 
 BUILD_LIBPICO=libpico.a
@@ -112,14 +111,18 @@ LIB_SRCS := $(ARDUINO_PICO_ROOT)/libraries/SdFat/src \
             $(ARDUINO_PICO_ROOT)/libraries/SPI/src \
             $(ARDUINO_PICO_ROOT)/libraries/Wire/src \
             $(ARDUINO_PICO_ROOT)/libraries/rp2040/src \
-            $(ARDUINO_PICO_ROOT)/libraries/EEPROM/src \
-            $(LIB_DIR)
+            $(ARDUINO_PICO_ROOT)/libraries/EEPROM \
+            $(CURDIR)/lib/Adafruit_GFX \
+            $(CURDIR)/lib/Adafruit_BusIO \
+            $(CURDIR)/lib/Adafruit_SSD1305 \
 
 # Remove any non-existent paths
 LIB_SRCS := $(wildcard $(LIB_SRCS))
 
 # Generate include paths
 LIB_INCLUDES := $(addprefix -I,$(LIB_SRCS))
+LIB_SUBDIRS := $(foreach dir,$(LIB_SRCS),$(shell find $(dir) -type d))
+LIB_INCLUDES += $(addprefix -I,$(LIB_SUBDIRS))
 
 # Special handling for TinyUSB
 TINYUSB_PATH := $(ARDUINO_PICO_ROOT)/libraries/Adafruit_TinyUSB_Arduino
@@ -150,10 +153,13 @@ SRC_C_FILES = $(call rwildcard,$(SRC_DIR),*.c)
 SRC_CPP_FILES = $(call rwildcard,$(SRC_DIR),*.cpp)
 
 # Library files
-LIB_C_FILES := $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*.c)) \
+LIB_C_FILES := $(foreach dir,$(LIB_SRCS),$(call rwildcard,$(dir),*.c))
+LIB_CPP_FILES := $(foreach dir,$(LIB_SRCS),$(call rwildcard,$(dir),*.cpp))
+
+#LIB_C_FILES := $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*.c)) \
                $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*/*.c))
 
-LIB_CPP_FILES := $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*.cpp)) \
+#LIB_CPP_FILES := $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*.cpp)) \
                  $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*/*.cpp))
 
 # Combine all sources
@@ -215,7 +221,7 @@ UF2_FAMILY ?= $(BUILD_UF2FAMILY)
 # Build rules
 .PHONY: all clean upload
 
-all: $(BUILD_DIR) $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT_NAME).bin.signed upload
+all: $(BUILD_DIR) $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT_NAME).bin.signed
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -279,7 +285,18 @@ $(BUILD_DIR)/memmap_default.ld: $(LIB_PATH)/memmap_default.ld
 	--sub __RAM_LENGTH__ $(BUILD_RAM_LENGTH) \
 	--sub __PSRAM_LENGTH__ $(BUILD_PSRAM_LENGTH)
 
-# Debug helper
+# GDB Debugging rule
+debug: $(BUILD_DIR)/$(PROJECT_NAME).elf
+	$(GCC_PATH)/$(TOOLCHAIN_PREFIX)gdb \
+		-ex "set confirm off" \
+		-ex "file $(BUILD_DIR)/$(PROJECT_NAME).elf" \
+		-ex "target remote 192.168.1.107:3333" \
+		-ex "monitor reset halt" \
+		-ex "set print pretty on" \
+		-ex "set print array on" \
+		-ex "set print array-indexes on" \
+		-ex "set print asm-demangle on" \
+		$(BUILD_DIR)/$(PROJECT_NAME).elf
 print-%:
 	@echo $* = $($*)
 print-flash-debug:
