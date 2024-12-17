@@ -218,8 +218,7 @@ PICO_LIBS := $(LIB_PATH)/$(BUILD_LIBPICO) \
 # Output formats
 UF2_FAMILY ?= $(BUILD_UF2FAMILY)
 
-# Build rules
-.PHONY: all clean upload
+.PHONY: all clean upload assets clean-assets
 
 all: $(BUILD_DIR) $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT_NAME).bin.signed
 
@@ -284,6 +283,78 @@ $(BUILD_DIR)/memmap_default.ld: $(LIB_PATH)/memmap_default.ld
 	--sub __FS_END__ $(BUILD_FS_END) \
 	--sub __RAM_LENGTH__ $(BUILD_RAM_LENGTH) \
 	--sub __PSRAM_LENGTH__ $(BUILD_PSRAM_LENGTH)
+# Assets compilation section
+RESOURCE_DIR := resource
+RESOURCE_BUILD_DIR := $(BUILD_DIR)/resource
+RESOURCE_SRCS := $(wildcard $(RESOURCE_DIR)/*.cpp)
+RESOURCE_OBJS := $(patsubst $(RESOURCE_DIR)/%.cpp,$(RESOURCE_BUILD_DIR)/%.o,$(RESOURCE_SRCS))
+RESOURCE_BIN := $(patsubst $(RESOURCE_DIR)/%.cpp,$(RESOURCE_BUILD_DIR)/%.bin,$(RESOURCE_SRCS))
+RESOURCE_EZ := $(patsubst $(RESOURCE_DIR)/%.cpp,$(RESOURCE_BUILD_DIR)/%.ez,$(RESOURCE_SRCS))
+RESOURCE_GEN := $(patsubst $(RESOURCE_DIR)/%.cpp,$(RESOURCE_BUILD_DIR)/R_%.cpp,$(RESOURCE_SRCS))
+
+# Resource header files
+R_HEADER := $(RESOURCE_BUILD_DIR)/R.h
+RESMAN_HEADER := $(RESOURCE_BUILD_DIR)/ResMan.h
+
+# Additional include paths for resources
+RESOURCE_INCLUDES := -I$(CURDIR)/src/Fonts \
+                    $(INCLUDES)
+
+# Print variables for debugging
+print-paths:
+	@echo "CURDIR: $(CURDIR)"
+	@echo "COMPRESS_DIR: $(CURDIR)/compress"
+
+# Ensure build directory exists
+$(RESOURCE_BUILD_DIR):
+	mkdir -p $(RESOURCE_BUILD_DIR)
+
+assets: $(RESOURCE_BUILD_DIR) $(RESOURCE_GEN) $(R_HEADER) $(RESMAN_HEADER)
+
+# Compile resource cpp files
+$(RESOURCE_BUILD_DIR)/%.o: $(RESOURCE_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) $(RESOURCE_INCLUDES) $< -o $@
+
+# Extract data section to binary
+$(RESOURCE_BUILD_DIR)/%.bin: $(RESOURCE_BUILD_DIR)/%.o
+	$(OBJCOPY) -O binary -j .data $< $@
+
+# Compress binary to ez using F# compressor
+$(RESOURCE_BUILD_DIR)/%.ez: $(RESOURCE_BUILD_DIR)/%.bin
+	cd $(CURDIR)/compress && dotnet run "$(CURDIR)/$<" "$(CURDIR)/$@"
+	cd $(CURDIR)/compress && rm -f patterns.txt
+
+# Generate R_*.cpp files
+$(RESOURCE_BUILD_DIR)/R_%.cpp: $(RESOURCE_BUILD_DIR)/%.ez
+	@echo '#include "R.h"' > $@
+	@echo 'const unsigned char __R_$*[] PROGMEM = {' >> $@
+	@hexdump -v -e '1/1 "  %d,\n"' $< >> $@
+	@echo '};' >> $@
+
+# Generate R.h header
+$(R_HEADER): $(RESOURCE_OBJS)
+	@echo '#pragma once' > $@
+	@echo '#include <hardware/flash.h>' >> $@
+	@echo '#include <hardware/sync.h>' >> $@
+	@echo '#include "pico/platform.h"' >> $@
+	@for file in $(RESOURCE_SRCS:$(RESOURCE_DIR)/%.cpp=%); do \
+		echo "extern const unsigned char __R_$$file[] PROGMEM;" >> $@; \
+		$(READELF) -s $(RESOURCE_BUILD_DIR)/$$file.o | \
+		awk '/OBJECT/ && /.data/{print "struct __T_"$$8" {";print "};\n"}' >> $@; \
+	done
+
+# Generate ResMan.h header
+$(RESMAN_HEADER): $(RESOURCE_OBJS)
+	@for file in $(RESOURCE_SRCS:$(RESOURCE_DIR)/%.cpp=%); do \
+		echo "__T_$$file *$$file;" >> $@; \
+		echo "void use_$$file() { $$file = (__T_$$file*) __use_resource(__R_$$file); }" >> $@; \
+	done
+
+.PHONY: assets clean-assets print-paths
+
+clean-assets:
+	rm -rf $(RESOURCE_BUILD_DIR)
 
 # GDB Debugging rule
 debug: $(BUILD_DIR)/$(PROJECT_NAME).elf
