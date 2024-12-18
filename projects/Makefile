@@ -67,6 +67,7 @@ CC := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)gcc
 CXX := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)g++
 AR := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)ar
 OBJCOPY := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)objcopy
+OBJDUMP := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)objdump
 SIZE := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)size
 READELF := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)readelf
 PYTHON3 := python3
@@ -220,7 +221,7 @@ UF2_FAMILY ?= $(BUILD_UF2FAMILY)
 
 .PHONY: all clean upload assets clean-assets
 
-all: $(BUILD_DIR) $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT_NAME).bin.signed
+all: $(BUILD_DIR) assets $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT_NAME).bin.signed
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -296,9 +297,14 @@ RESOURCE_GEN := $(patsubst $(RESOURCE_DIR)/%.cpp,$(RESOURCE_BUILD_DIR)/R_%.cpp,$
 R_HEADER := $(RESOURCE_BUILD_DIR)/R.h
 RESMAN_HEADER := $(RESOURCE_BUILD_DIR)/ResMan.h
 
-# Additional include paths for resources
+# Additional include paths and flags for resources
 RESOURCE_INCLUDES := -I$(CURDIR)/src/Fonts \
                     $(INCLUDES)
+
+# Tell make not to delete these intermediate files
+.PRECIOUS: $(RESOURCE_BUILD_DIR)/%.o $(RESOURCE_BUILD_DIR)/%.bin $(RESOURCE_BUILD_DIR)/%.ez
+# Mark compression steps as not parallel
+.NOTPARALLEL: $(RESOURCE_EZ)
 
 # Print variables for debugging
 print-paths:
@@ -311,51 +317,99 @@ $(RESOURCE_BUILD_DIR):
 
 assets: $(RESOURCE_BUILD_DIR) $(RESOURCE_GEN) $(R_HEADER) $(RESMAN_HEADER)
 
-# Compile resource cpp files
+# Compile resource cpp files - force arrays into .rodata section
 $(RESOURCE_BUILD_DIR)/%.o: $(RESOURCE_DIR)/%.cpp
+	@echo "Compiling $< ..."
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(RESOURCE_INCLUDES) $< -o $@
-
+	$(CXX) $(CXXFLAGS) $(RESOURCE_INCLUDES) -fdata-sections \
+		-fno-common \
+		-fno-zero-initialized-in-bss \
+		$< -o $@
+	@echo "Object file sections:"
+	@$(OBJDUMP) -h $@
 # Extract data section to binary
 $(RESOURCE_BUILD_DIR)/%.bin: $(RESOURCE_BUILD_DIR)/%.o
-	$(OBJCOPY) -O binary -j .data $< $@
+	@echo "Extracting data from $< ..."
+	$(OBJCOPY) -O binary --only-section='.data*' $< $@
+	@echo "Generated binary size:"
+	@ls -l $@
+	@echo "Binary contents:"
+	@hexdump $@
 
 # Compress binary to ez using F# compressor
 $(RESOURCE_BUILD_DIR)/%.ez: $(RESOURCE_BUILD_DIR)/%.bin
+	@echo "Compressing $< ..."
 	cd $(CURDIR)/compress && dotnet run "$(CURDIR)/$<" "$(CURDIR)/$@"
 	cd $(CURDIR)/compress && rm -f patterns.txt
+	@echo "Compressed file size:"
+	@ls -l $@
+	@echo "Compressed contents:"
+	@hexdump $@
 
 # Generate R_*.cpp files
 $(RESOURCE_BUILD_DIR)/R_%.cpp: $(RESOURCE_BUILD_DIR)/%.ez
+	@mkdir -p src/resources
+	@echo "Generating R_$*.cpp ..."
 	@echo '#include "R.h"' > $@
 	@echo 'const unsigned char __R_$*[] PROGMEM = {' >> $@
 	@hexdump -v -e '1/1 "  %d,\n"' $< >> $@
 	@echo '};' >> $@
+	@cp $@ src/resources/
 
 # Generate R.h header
 $(R_HEADER): $(RESOURCE_OBJS)
+	@mkdir -p src/resources
 	@echo '#pragma once' > $@
 	@echo '#include <hardware/flash.h>' >> $@
 	@echo '#include <hardware/sync.h>' >> $@
 	@echo '#include "pico/platform.h"' >> $@
-	@for file in $(RESOURCE_SRCS:$(RESOURCE_DIR)/%.cpp=%); do \
-		echo "extern const unsigned char __R_$$file[] PROGMEM;" >> $@; \
-		$(READELF) -s $(RESOURCE_BUILD_DIR)/$$file.o | \
-		awk '/OBJECT/ && /.data/{print "struct __T_"$$8" {";print "};\n"}' >> $@; \
+	@for obj in $^; do \
+		base=$$(basename $$obj .o); \
+		echo "extern const unsigned char __R_$$base[] PROGMEM;" >> $@; \
+		echo "struct __T_$$base {" >> $@; \
+		$(OBJDUMP) -t $$obj | grep "^[0-9a-f]* g     O .data." | tail -r > /tmp/symbols.txt; \
+		while read line; do \
+			name=$$(echo "$$line" | awk '{print $$NF}'); \
+			size=$$(echo "$$line" | awk '{print $$(NF-1)}'); \
+			dec=$$(printf "%d" 0x$$size); \
+			type=$$(grep -h "^[[:space:]]*.*$$name.*=" $(RESOURCE_DIR)/$$base.cpp | head -n1 | \
+				sed -E 's/^[[:space:]]*((unsigned[[:space:]]+)?[^=[:space:]]+(<[^>]*>)?)[[:space:]]*[^=]*=.*/\1/'); \
+			if [ -z "$$type" ]; then type="unsigned char"; fi; \
+			echo "  union {" >> $@; \
+			echo "    $$type $$name[0];" >> $@; \
+			echo "    char zz__$$name[$$dec];" >> $@; \
+			echo "  };" >> $@; \
+			echo "  static constexpr size_t countof_$$name = $$dec / sizeof($$type);" >> $@; \
+			echo "  static constexpr size_t sizeofof_$$name = $$dec;" >> $@; \
+		done < /tmp/symbols.txt; \
+     	total=0; \
+		while read line; do \
+			size=$$(echo "$$line" | awk '{print $$(NF-1)}'); \
+			dec=$$(printf "%d" 0x$$size); \
+			total=$$((total + dec)); \
+		done < /tmp/symbols.txt; \
+		echo "  static constexpr size_t __total_size = $$total;" >> $@; \
+		echo "};" >> $@; \
 	done
+	@cp $@ src/resources/
+	@rm -f /tmp/symbols.txt
+
+# Mark compression steps as not parallel to avoid conflicts
+.NOTPARALLEL: $(RESOURCE_EZ)
 
 # Generate ResMan.h header
 $(RESMAN_HEADER): $(RESOURCE_OBJS)
-	@for file in $(RESOURCE_SRCS:$(RESOURCE_DIR)/%.cpp=%); do \
-		echo "__T_$$file *$$file;" >> $@; \
-		echo "void use_$$file() { $$file = (__T_$$file*) __use_resource(__R_$$file); }" >> $@; \
+	@mkdir -p src/resources
+	@echo '#pragma once' > $@
+	@for obj in $^; do \
+		base=$$(basename $$obj .o); \
+		echo "__T_$$base *$$base;" >> $@; \
+		echo "void use_$$base() { $$base = (__T_$$base*) __use_resource(__R_$$base); }" >> $@; \
 	done
-
-.PHONY: assets clean-assets print-paths
+	@cp $@ src/resources/
 
 clean-assets:
 	rm -rf $(RESOURCE_BUILD_DIR)
-
 # GDB Debugging rule
 debug: $(BUILD_DIR)/$(PROJECT_NAME).elf
 	$(GCC_PATH)/$(TOOLCHAIN_PREFIX)gdb \
