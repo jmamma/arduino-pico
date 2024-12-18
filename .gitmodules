@@ -55,3 +55,6 @@
 [submodule "projects/mcl/lib/Adafruit_SSD1305"]
 	path = projects/mcl/lib/Adafruit_SSD1305
 	url = https://github.com/adafruit/Adafruit_SSD1305
+[submodule "projects/mcl/lib/Adafruit_BusIO"]
+	path = projects/mcl/lib/Adafruit_BusIO
+	url = https://github.com/adafruit/Adafruit_BusIO
