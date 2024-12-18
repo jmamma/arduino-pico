@@ -360,9 +360,7 @@ $(RESOURCE_BUILD_DIR)/R_%.cpp: $(RESOURCE_BUILD_DIR)/%.ez
 $(R_HEADER): $(RESOURCE_OBJS)
 	@mkdir -p src/resources
 	@echo '#pragma once' > $@
-	@echo '#include <hardware/flash.h>' >> $@
-	@echo '#include <hardware/sync.h>' >> $@
-	@echo '#include "pico/platform.h"' >> $@
+	@cat resource/* | grep '^#include' | sort | uniq >> $@
 	@for obj in $^; do \
 		base=$$(basename $$obj .o); \
 		echo "extern const unsigned char __R_$$base[] PROGMEM;" >> $@; \
