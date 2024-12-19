@@ -108,15 +108,14 @@ DEFINES := $(BUILD_USBVID) \
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
 
 # Base required libraries
-LIB_SRCS := $(ARDUINO_PICO_ROOT)/libraries/SdFat/src \
-            $(ARDUINO_PICO_ROOT)/libraries/SPI/src \
+LIB_SRCS := $(ARDUINO_PICO_ROOT)/libraries/SPI/src \
             $(ARDUINO_PICO_ROOT)/libraries/Wire/src \
             $(ARDUINO_PICO_ROOT)/libraries/rp2040/src \
             $(ARDUINO_PICO_ROOT)/libraries/EEPROM \
             $(CURDIR)/lib/Adafruit_GFX \
             $(CURDIR)/lib/Adafruit_BusIO \
             $(CURDIR)/lib/Adafruit_SSD1305 \
-
+            $(CURDIR)/lib/SdFat/src \
 # Remove any non-existent paths
 LIB_SRCS := $(wildcard $(LIB_SRCS))
 
@@ -304,7 +303,7 @@ RESOURCE_INCLUDES := -I$(CURDIR)/src/Fonts \
 # Tell make not to delete these intermediate files
 .PRECIOUS: $(RESOURCE_BUILD_DIR)/%.o $(RESOURCE_BUILD_DIR)/%.bin $(RESOURCE_BUILD_DIR)/%.ez
 # Mark compression steps as not parallel
-.NOTPARALLEL: $(RESOURCE_EZ)
+//.NOTPARALLEL: $(RESOURCE_EZ)
 
 # Print variables for debugging
 print-paths:

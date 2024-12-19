@@ -58,3 +58,6 @@
 [submodule "projects/mcl/lib/Adafruit_BusIO"]
 	path = projects/mcl/lib/Adafruit_BusIO
 	url = https://github.com/adafruit/Adafruit_BusIO
+[submodule "projects/mcl/lib/SdFat"]
+	path = projects/mcl/lib/SdFat
+	url = https://github.com/greiman/SdFat
