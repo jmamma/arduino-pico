@@ -285,6 +285,7 @@ $(BUILD_DIR)/memmap_default.ld: $(LIB_PATH)/memmap_default.ld
 	--sub __PSRAM_LENGTH__ $(BUILD_PSRAM_LENGTH)
 # Assets compilation section
 RESOURCE_DIR := resource
+HAS_RESOURCES := $(wildcard $(RESOURCE_DIR))
 RESOURCE_BUILD_DIR := $(BUILD_DIR)/resource
 RESOURCE_SRCS := $(wildcard $(RESOURCE_DIR)/*.cpp)
 RESOURCE_OBJS := $(patsubst $(RESOURCE_DIR)/%.cpp,$(RESOURCE_BUILD_DIR)/%.o,$(RESOURCE_SRCS))
@@ -314,7 +315,7 @@ print-paths:
 $(RESOURCE_BUILD_DIR):
 	mkdir -p $(RESOURCE_BUILD_DIR)
 
-assets: $(RESOURCE_BUILD_DIR) $(RESOURCE_GEN) $(R_HEADER) $(RESMAN_HEADER)
+assets: $(if $(HAS_RESOURCES),$(RESOURCE_BUILD_DIR) $(RESOURCE_GEN) $(R_HEADER) $(RESMAN_HEADER))
 
 # Compile resource cpp files - force arrays into .rodata section
 $(RESOURCE_BUILD_DIR)/%.o: $(RESOURCE_DIR)/%.cpp
