@@ -352,7 +352,7 @@ $(RESOURCE_BUILD_DIR)/R_%.cpp: $(RESOURCE_BUILD_DIR)/%.ez
 	@echo "Generating R_$*.cpp ..."
 	@echo '#include "R.h"' > $@
 	@echo 'const unsigned char __R_$*[] PROGMEM = {' >> $@
-	@hexdump -v -e '1/1 "  %d,\n"' $< >> $@
+	@hexdump -v -e '1/1 "%3u,\n"' $< >> $@
 	@echo '};' >> $@
 	@cp $@ src/resources/
 
