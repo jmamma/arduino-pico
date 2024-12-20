@@ -327,14 +327,19 @@ $(RESOURCE_BUILD_DIR)/%.o: $(RESOURCE_DIR)/%.cpp
 		$< -o $@
 	@echo "Object file sections:"
 	@$(OBJDUMP) -h $@
-# Extract data section to binary
+
 $(RESOURCE_BUILD_DIR)/%.bin: $(RESOURCE_BUILD_DIR)/%.o
 	@echo "Extracting data from $< ..."
-	$(OBJCOPY) -O binary --only-section='.data*' $< $@
+	@# First get list of all .data.* sections and extract them
+	@$(OBJDUMP) -h $< | grep '\.data\.' | awk '{print $$2}' | while read section; do \
+		echo "Extracting section $$section..."; \
+		$(OBJCOPY) -O binary --only-section=$$section $< $(RESOURCE_BUILD_DIR)/$$section.tmp; \
+	done
+	@echo "Concatenating sections..."
+	@cat $(RESOURCE_BUILD_DIR)/.data.*.tmp > $@
+	@rm -f $(RESOURCE_BUILD_DIR)/.data.*.tmp
 	@echo "Generated binary size:"
 	@ls -l $@
-	@echo "Binary contents:"
-	@hexdump $@
 
 # Compress binary to ez using F# compressor
 $(RESOURCE_BUILD_DIR)/%.ez: $(RESOURCE_BUILD_DIR)/%.bin
