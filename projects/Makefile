@@ -304,7 +304,7 @@ RESOURCE_INCLUDES := -I$(CURDIR)/src/Fonts \
 # Tell make not to delete these intermediate files
 .PRECIOUS: $(RESOURCE_BUILD_DIR)/%.o $(RESOURCE_BUILD_DIR)/%.bin $(RESOURCE_BUILD_DIR)/%.ez
 # Mark compression steps as not parallel
-//.NOTPARALLEL: $(RESOURCE_EZ)
+#.NOTPARALLEL: $(RESOURCE_EZ)
 
 # Print variables for debugging
 print-paths:
@@ -331,13 +331,16 @@ $(RESOURCE_BUILD_DIR)/%.o: $(RESOURCE_DIR)/%.cpp
 $(RESOURCE_BUILD_DIR)/%.bin: $(RESOURCE_BUILD_DIR)/%.o
 	@echo "Extracting data from $< ..."
 	@# First get list of all .data.* sections and extract them
-	@$(OBJDUMP) -h $< | grep '\.data\.' | awk '{print $$2}' | while read section; do \
+	@$(OBJDUMP) -h $< | grep '\.data\.' | awk '{print $$2}'
+	@$(OBJDUMP) -h $< | grep '\.data\.' | awk '{print $$2}' | tail -r |	while read section; do \
 		echo "Extracting section $$section..."; \
 		$(OBJCOPY) -O binary --only-section=$$section $< $(RESOURCE_BUILD_DIR)/$$section.tmp; \
+        size=$$(stat -f%z $(RESOURCE_BUILD_DIR)/$$section.tmp); \
+		padded_size=$$(expr \( $$size + 3 \) / 4 \* 4); \
+        truncate -s $$padded_size $(RESOURCE_BUILD_DIR)/$$section.tmp; \
+      	cat $(RESOURCE_BUILD_DIR)/$$section.tmp >> $@; \
+		rm $(RESOURCE_BUILD_DIR)/$$section.tmp; \
 	done
-	@echo "Concatenating sections..."
-	@cat $(RESOURCE_BUILD_DIR)/.data.*.tmp > $@
-	@rm -f $(RESOURCE_BUILD_DIR)/.data.*.tmp
 	@echo "Generated binary size:"
 	@ls -l $@
 
@@ -371,26 +374,24 @@ $(R_HEADER): $(RESOURCE_OBJS)
 		echo "extern const unsigned char __R_$$base[] PROGMEM;" >> $@; \
 		echo "struct __T_$$base {" >> $@; \
 		$(OBJDUMP) -t $$obj | grep "^[0-9a-f]* g     O .data." | tail -r > /tmp/symbols.txt; \
+		total=0; \
 		while read line; do \
 			name=$$(echo "$$line" | awk '{print $$NF}'); \
 			size=$$(echo "$$line" | awk '{print $$(NF-1)}'); \
 			dec=$$(printf "%d" 0x$$size); \
+			dec_aligned=$$(expr \( $$dec + 3 \) / 4 \* 4); \
 			type=$$(grep -h "^[[:space:]]*.*$$name.*=" $(RESOURCE_DIR)/$$base.cpp | head -n1 | \
 				sed -E 's/^[[:space:]]*((unsigned[[:space:]]+)?[^=[:space:]]+(<[^>]*>)?)[[:space:]]*[^=]*=.*/\1/'); \
 			if [ -z "$$type" ]; then type="unsigned char"; fi; \
 			echo "  union {" >> $@; \
 			echo "    $$type $$name[0];" >> $@; \
-			echo "    char zz__$$name[$$dec];" >> $@; \
+			echo "    char zz__$$name[$$dec_aligned];" >> $@; \
 			echo "  };" >> $@; \
-			echo "  static constexpr size_t countof_$$name = $$dec / sizeof($$type);" >> $@; \
-			echo "  static constexpr size_t sizeofof_$$name = $$dec;" >> $@; \
+			echo "  static constexpr size_t countof_$$name = $$dec_aligned / sizeof($$type);" >> $@; \
+			echo "  static constexpr size_t sizeofof_$$name = $$dec_aligned;" >> $@; \
+			total=$$((total + dec_aligned)); \
 		done < /tmp/symbols.txt; \
-     	total=0; \
-		while read line; do \
-			size=$$(echo "$$line" | awk '{print $$(NF-1)}'); \
-			dec=$$(printf "%d" 0x$$size); \
-			total=$$((total + dec)); \
-		done < /tmp/symbols.txt; \
+		total=$$(expr \( $$total + 3 \) / 4 \* 4); \
 		echo "  static constexpr size_t __total_size = $$total;" >> $@; \
 		echo "};" >> $@; \
 	done
