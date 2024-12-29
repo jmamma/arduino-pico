@@ -2,20 +2,29 @@
 PROJECT_NAME = $(notdir $(CURDIR))
 
 RUNTIME_IDE_VERSION := 10607
-BUILD_ARCH := RP2040
+BUILD_ARCH := RP2350
 
-BUILD_CHIP = rp2040
-VARIANT := rpipicow
-FLASH_LAYOUT := 2097152_0# 2MB, no filesystem
+BUILD_CHIP = rp2350
+VARIANT := rpipico2w
+
+ifeq ($(BUILD_CHIP),rp2350)
+    # Use 4MB flash with no filesystem for rp2350
+    FLASH_LAYOUT := 4194304_0
+else
+    # Keep existing 2MB layout for other chips
+    FLASH_LAYOUT := 2097152_0
+endif
+
+F_CPU = 150000000
 
 ARDUINO_PICO_ROOT = $(realpath ../..)
-CORE_PATH = $(ARDUINO_PICO_ROOT)/cores/$(BUILD_CHIP)
+CORE_PATH = $(ARDUINO_PICO_ROOT)/cores/rp2040
 LIB_PATH = $(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)
 BOOT2_PATH = $(ARDUINO_PICO_ROOT)/boot2/$(BUILD_CHIP)
 
 # Arduino toolchain paths for macOS
 ARDUINO_PATH = $(HOME)/Library/Arduino15
-TOOLS_PATH = $(ARDUINO_PATH)/packages/$(BUILD_CHIP)/tools
+TOOLS_PATH = $(ARDUINO_PATH)/packages/rp2040/tools
 GCC_PATH = $(wildcard $(TOOLS_PATH)/pqt-gcc/*/bin)
 
 SRC_DIR = src
@@ -37,13 +46,20 @@ BUILD_USB_PRODUCT := $(shell grep "$(VARIANT).build.usb_product" $(ARDUINO_PICO_
 
 BUILD_BOARD := $(shell grep "$(VARIANT).build.board" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
 BUILD_F_CPU := $(shell grep "$(VARIANT).build.f_cpu" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
-BUILD_TOOLCHAINOPTS := $(shell grep "$(VARIANT).build.toolchainopts" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
 BUILD_EXTRA_FLAGS := $(shell grep "$(VARIANT).build.extra_flags" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
 BUILD_VARIANT := $(shell grep "$(VARIANT).build.variant" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
 BUILD_VARIANTDEFINES := $(shell grep "$(VARIANT).build.variantdefines" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
 BUILD_FLASH_TOTAL := $(shell grep "$(VARIANT).menu.flash.$(FLASH_LAYOUT).build.flash_total" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
 
 BUILD_BOOT2 := $(shell grep "$(VARIANT).build.boot2" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
+
+ifeq ($(BUILD_CHIP),rp2040)
+    BUILD_TOOLCHAINOPTS := $(shell grep "$(VARIANT).build.toolchainopts" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
+endif
+
+ifeq ($(BUILD_CHIP),rp2350)
+    BUILD_TOOLCHAINOPTS := $(shell grep "$(VARIANT).menu.arch.arm.build.toolchainopts" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
+endif
 
 # Get memory map values
 BUILD_FLASH_LENGTH := $(shell grep "$(VARIANT).menu.flash.$(FLASH_LAYOUT).build.flash_length" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
@@ -57,6 +73,7 @@ BUILD_PSRAM_LENGTH := 0
 EXCEPTIONS = Disabled
 BUILD_FLAGS_EXCEPTIONS := $(shell grep "$(VARIANT).menu.exceptions.$(EXCEPTIONS).build.flags.exceptions" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
 BUILD_FLAGS_LIBSTDCPP := $(shell grep "$(VARIANT).menu.exceptions.$(EXCEPTIONS).build.flags.libstdcpp" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
+BUILD_FLAGS_OPTIMIZE := $(shell grep "$(VARIANT).build.flags.optimize" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f2-)
 
 BUILD_LED_PIN := $(shell grep "$(VARIANT).build.led_defines" $(ARDUINO_PICO_ROOT)/boards.txt | cut -d= -f3-)
 
@@ -66,6 +83,7 @@ TOOLCHAIN_PREFIX := arm-none-eabi-
 CC := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)gcc
 CXX := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)g++
 AR := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)ar
+
 OBJCOPY := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)objcopy
 OBJDUMP := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)objdump
 SIZE := $(GCC_PATH)/$(TOOLCHAIN_PREFIX)size
@@ -82,6 +100,8 @@ WARNING_FLAGS_ALL := -Wall -Wextra -Werror=return-type -Wno-ignored-qualifiers -
 NET_DEFINES := $(BUILD_LIBPICOWDEFS) -DLWIP_IGMP=1 -DLWIP_CHECKSUM_CTRL_PER_NETIF=1
 PSRAM_DEFINES := $(BUILD_PSRAM_CS) $(BUILD_PSRAM_FREQ)
 
+F_CPU ?= $(BUILD_F_CPU)
+
 DEFINES := $(BUILD_USBVID) \
           $(BUILD_USBPID) \
           $(BUILD_USBPWR) \
@@ -93,7 +113,7 @@ DEFINES := $(BUILD_USBVID) \
           -DARDUINO_VARIANT="$(VARIANT)" \
           -DPICO_FLASH_SIZE_BYTES=$(BUILD_FLASH_TOTAL) \
           $(BUILD_EXTRA_FLAGS) \
-          -DF_CPU=$(BUILD_F_CPU) \
+          -DF_CPU=$(F_CPU) \
           -DARDUINO=$(RUNTIME_IDE_VERSION) \
           -DARDUINO_$(BUILD_BOARD) \
           -DBOARD_NAME="$(BUILD_BOARD)" \
@@ -101,9 +121,15 @@ DEFINES := $(BUILD_USBVID) \
           $(BUILD_DEBUG_PORT) \
           $(BUILD_DEBUG_LEVEL) \
           -DWIFICC=CYW43_COUNTRY_WORLDWIDE \
-          -DUSE_TINYUSB \
           -DENABLE_CLASSIC \
-          @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_def.txt
+          -DUSE_TINYUSB \
+          -DUSE_SPI_ARRAY_TRANSFER=1\
+          -DDISABLE_FS_H_WARNING=1
+ifeq ($(BUILD_CHIP),rp2350)
+    DEFINES += -DPICO_RP2350
+endif
+
+DEFINES += @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_def.txt
 
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
 
@@ -147,6 +173,11 @@ INCLUDES += $(addprefix -I,$(SRC_SUBDIRS))
 # Core files (excluding sdkoverride)
 CORE_C_FILES = $(filter-out $(CORE_PATH)/sdkoverride/%,$(call rwildcard,$(CORE_PATH),*.c))
 CORE_CPP_FILES = $(call rwildcard,$(CORE_PATH),*.cpp)
+ifeq ($(BUILD_CHIP),rp2350)
+    CORE_ASM_FILES += $(CORE_PATH)/rp2350-memcpy.S
+endif
+
+ASM_SRCS = $(CORE_ASM_FILES)
 
 # Source directory files
 SRC_C_FILES = $(call rwildcard,$(SRC_DIR),*.c)
@@ -167,19 +198,21 @@ C_SRCS = $(CORE_C_FILES) $(SRC_C_FILES) $(LIB_C_FILES) $(TINYUSB_C_FILES)
 CPP_SRCS = $(CORE_CPP_FILES) $(SRC_CPP_FILES) $(LIB_CPP_FILES) $(TINYUSB_CPP_FILES)
 
 # Generate object files
+
+ASM_OBJS = $(patsubst %.S,$(BUILD_DIR)/%.o,$(ASM_SRCS))
 C_OBJS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(C_SRCS))
 CPP_OBJS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(CPP_SRCS))
 
 # Variant sources
 VARIANT_CPP_SRCS = $(wildcard $(VARIANTS_DIR)/*.cpp)
-VARIANT_CPP_OBJS = $(patsubst $(VARIANTS_DIR)/%.cpp,$(VARIANTS_DIR)/$(BUILD_DIR)/%.o,$(VARIANT_CPP_SRCS))
+VARIANT_CPP_OBJS = $(patsubst $(VARIANTS_DIR)/%.cpp,$(BUILD_DIR)/$(VARIANTS_DIR)/%.o,$(VARIANT_CPP_SRCS))
 
 # Add variant objects to the list
-OBJS = $(CPP_OBJS) $(C_OBJS) $(VARIANT_CPP_OBJS)
+OBJS = $(CPP_OBJS) $(C_OBJS) $(VARIANT_CPP_OBJS) $(ASM_OBJS)
 
 # Compiler flags
 COMMON_FLAGS := $(BUILD_TOOLCHAINOPTS) -ffunction-sections -fdata-sections $(BUILD_FLAGS_EXCEPTIONS) \
-               $(BUILD_FLAGS_STACKPROTECT) $(BUILD_PICODEBUGFLAGS)
+               $(BUILD_FLAGS_STACKPROTECT) $(BUILD_PICODEBUGFLAGS) $(BUILD_FLAGS_OPTIMIZE)
 
 # Wrap options from platform
 WRAP_FLAGS := @$(LIB_PATH)/platform_wrap.txt \
@@ -224,6 +257,10 @@ all: $(BUILD_DIR) assets $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/%.o: %.S
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/%.o: %.c
 	mkdir -p $(dir $@)
@@ -415,6 +452,15 @@ $(RESMAN_HEADER): $(RESOURCE_OBJS)
 clean-assets:
 	rm -rf $(RESOURCE_BUILD_DIR)
 # GDB Debugging rule
+dump-midi:
+	@echo "=== Size of sections ==="
+	$(SIZE) $(BUILD_DIR)/src/MidiUart.o
+	@echo "\n=== All sections ==="
+	$(OBJDUMP) -h $(BUILD_DIR)/src/MidiUart.o
+	@echo "\n=== Text section disassembly ==="
+	$(OBJDUMP) -d -S $(BUILD_DIR)/src/MidiUart.o
+	@echo "\n=== Symbols ==="
+	$(OBJDUMP) -t $(BUILD_DIR)/src/MidiUart.o
 debug: $(BUILD_DIR)/$(PROJECT_NAME).elf
 	$(GCC_PATH)/$(TOOLCHAIN_PREFIX)gdb \
 		-ex "set confirm off" \
