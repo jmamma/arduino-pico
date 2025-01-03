@@ -10,12 +10,12 @@ VARIANT := rpipico2w
 ifeq ($(BUILD_CHIP),rp2350)
     # Use 4MB flash with no filesystem for rp2350
     FLASH_LAYOUT := 4194304_0
+    F_CPU = 150000000
 else
     # Keep existing 2MB layout for other chips
     FLASH_LAYOUT := 2097152_0
+    F_CPU = 125000000
 endif
-
-F_CPU = 150000000
 
 ARDUINO_PICO_ROOT = $(realpath ../..)
 CORE_PATH = $(ARDUINO_PICO_ROOT)/cores/rp2040
