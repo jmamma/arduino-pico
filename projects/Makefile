@@ -2,8 +2,10 @@
 PROJECT_NAME = $(notdir $(CURDIR))
 
 RUNTIME_IDE_VERSION := 10607
-BUILD_ARCH := RP2350
 
+PLATFORM := TBD
+
+BUILD_ARCH := RP2350
 BUILD_CHIP = rp2350
 VARIANT := rpipico2w
 
@@ -124,7 +126,9 @@ DEFINES := $(BUILD_USBVID) \
           -DENABLE_CLASSIC \
           -DUSE_TINYUSB \
           -DUSE_SPI_ARRAY_TRANSFER=1\
-          -DDISABLE_FS_H_WARNING=1
+          -DDISABLE_FS_H_WARNING=1\
+          -DPLATFORM=$(PLATFORM)
+
 ifeq ($(BUILD_CHIP),rp2350)
     DEFINES += -DPICO_RP2350
 endif
@@ -141,6 +145,7 @@ LIB_SRCS := $(ARDUINO_PICO_ROOT)/libraries/SPI/src \
             $(CURDIR)/lib/Adafruit_GFX \
             $(CURDIR)/lib/Adafruit_BusIO \
             $(CURDIR)/lib/Adafruit_SSD1305 \
+            $(CURDIR)/lib/DaDa_SSD1309_MCL \
             $(CURDIR)/lib/SdFat/src \
 # Remove any non-existent paths
 LIB_SRCS := $(wildcard $(LIB_SRCS))
