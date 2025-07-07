@@ -3,11 +3,12 @@ PROJECT_NAME = $(notdir $(CURDIR))
 
 RUNTIME_IDE_VERSION := 10607
 
-PLATFORM := TBD
+PLATFORM := PLATFORM_TBD
 
 BUILD_ARCH := RP2350
 BUILD_CHIP = rp2350
 VARIANT := rpipico2w
+CHIP_VARIANT := PICO_RP2350A=0 #https://github.com/raspberrypi/pico-sdk/issues/2364
 
 ifeq ($(BUILD_CHIP),rp2350)
     # Use 4MB flash with no filesystem for rp2350
@@ -107,6 +108,7 @@ F_CPU ?= $(BUILD_F_CPU)
 DEFINES := $(BUILD_USBVID) \
           $(BUILD_USBPID) \
           $(BUILD_USBPWR) \
+          -D$(CHIP_VARIANT) \
           -DUSB_MANUFACTURER='$(BUILD_USB_MANUFACTURER)' \
           -DUSB_PRODUCT='$(BUILD_USB_PRODUCT)' \
           -DLWIP_IGMP=1 \
@@ -125,13 +127,15 @@ DEFINES := $(BUILD_USBVID) \
           -DWIFICC=CYW43_COUNTRY_WORLDWIDE \
           -DENABLE_CLASSIC \
           -DUSE_TINYUSB \
-          -DUSE_SPI_ARRAY_TRANSFER=1\
-          -DDISABLE_FS_H_WARNING=1\
-          -DPLATFORM=$(PLATFORM)
+          -DUSE_SPI_ARRAY_TRANSFER=2 \
+          -DDISABLE_FS_H_WARNING=1 \
+          -D$(PLATFORM)
 
 ifeq ($(BUILD_CHIP),rp2350)
     DEFINES += -DPICO_RP2350
 endif
+
+SDFAT_DEFINES := $(DEFINES) -DARDUINO_ARCH_RP2040
 
 DEFINES += @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_def.txt
 
@@ -146,7 +150,9 @@ LIB_SRCS := $(ARDUINO_PICO_ROOT)/libraries/SPI/src \
             $(CURDIR)/lib/Adafruit_BusIO \
             $(CURDIR)/lib/Adafruit_SSD1305 \
             $(CURDIR)/lib/DaDa_SSD1309_MCL \
-            $(CURDIR)/lib/SdFat/src \
+            $(ARDUINO_PICO_ROOT)/libraries/SdFat/src \
+            $(ARDUINO_PICO_ROOT)/libraries/SoftwareSPI/src
+
 # Remove any non-existent paths
 LIB_SRCS := $(wildcard $(LIB_SRCS))
 
@@ -228,6 +234,10 @@ CFLAGS := -c $(WARNING_FLAGS) $(DEFINES) $(COMMON_FLAGS) -MMD $(INCLUDES) -std=g
 
 CXXFLAGS := -c $(WARNING_FLAGS) $(DEFINES) $(COMMON_FLAGS) -MMD $(INCLUDES) $(BUILD_FLAGS_RTTI) -std=gnu++17 -g -pipe
 
+# SdFat-specific flags
+SDFAT_CFLAGS := -c $(WARNING_FLAGS) $(SDFAT_DEFINES) $(COMMON_FLAGS) -MMD $(INCLUDES) -std=gnu17 -g -pipe
+SDFAT_CXXFLAGS := -c $(WARNING_FLAGS) $(SDFAT_DEFINES) $(COMMON_FLAGS) -MMD $(INCLUDES) $(BUILD_FLAGS_RTTI) -std=gnu++17 -g -pipe
+
 # Linker flags
 
 LDFLAGS := $(WRAP_FLAGS) -Wl,--cref -Wl,--check-sections -Wl,--gc-sections \
@@ -262,6 +272,15 @@ all: $(BUILD_DIR) assets $(BUILD_DIR)/$(PROJECT_NAME).uf2 $(BUILD_DIR)/$(PROJECT
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+
+# Add specific compilation rules for SdFat files
+$(BUILD_DIR)/$(ARDUINO_PICO_ROOT)/libraries/SdFat/src/%.o: $(ARDUINO_PICO_ROOT)/libraries/SdFat/src/%.c
+	mkdir -p $(dir $@)
+	$(CC) $(SDFAT_CFLAGS) $< -o $@
+
+$(BUILD_DIR)/$(ARDUINO_PICO_ROOT)/libraries/SdFat/src/%.o: $(ARDUINO_PICO_ROOT)/libraries/SdFat/src/%.cpp
+	mkdir -p $(dir $@)
+	$(CXX) $(SDFAT_CXXFLAGS) $< -o $@
 
 $(BUILD_DIR)/%.o: %.S
 	mkdir -p $(dir $@)
