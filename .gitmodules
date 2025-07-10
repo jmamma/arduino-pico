@@ -58,3 +58,6 @@
 [submodule "projects/mcl/lib/Adafruit_BusIO"]
 	path = projects/mcl/lib/Adafruit_BusIO
 	url = https://github.com/adafruit/Adafruit_BusIO
+[submodule "projects/mcl/lib/Adafruit_NeoPixel"]
+	path = projects/mcl/lib/Adafruit_NeoPixel
+	url = https://github.com/adafruit/Adafruit_NeoPixel

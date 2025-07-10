@@ -142,23 +142,29 @@ DEFINES += @$(ARDUINO_PICO_ROOT)/lib/$(BUILD_CHIP)/platform_def.txt
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
 
 # Base required libraries
+
 LIB_SRCS := $(ARDUINO_PICO_ROOT)/libraries/SPI/src \
             $(ARDUINO_PICO_ROOT)/libraries/Wire/src \
             $(ARDUINO_PICO_ROOT)/libraries/rp2040/src \
             $(ARDUINO_PICO_ROOT)/libraries/EEPROM \
             $(CURDIR)/lib/Adafruit_GFX \
             $(CURDIR)/lib/Adafruit_BusIO \
+            $(CURDIR)/lib/DaDa_OLED/src \
             $(CURDIR)/lib/Adafruit_SSD1305 \
-            $(CURDIR)/lib/DaDa_SSD1309_MCL \
+            $(CURDIR)/lib/Adafruit_NeoPixel \
             $(ARDUINO_PICO_ROOT)/libraries/SdFat/src \
             $(ARDUINO_PICO_ROOT)/libraries/SoftwareSPI/src
+
+LIB_INCS := $(CURDIR)/lib/rp2350-arduino-tbd-fw/src
+LIB_SRC_CPPS := $(CURDIR)/lib/rp2350-arduino-tbd-fw/src/Ui.cpp \
+                $(CURDIR)/lib/rp2350-arduino-tbd-fw/src/SpiAPI.cpp
 
 # Remove any non-existent paths
 LIB_SRCS := $(wildcard $(LIB_SRCS))
 
 # Generate include paths
-LIB_INCLUDES := $(addprefix -I,$(LIB_SRCS))
-LIB_SUBDIRS := $(foreach dir,$(LIB_SRCS),$(shell find $(dir) -type d))
+LIB_INCLUDES := $(addprefix -I,$(LIB_SRCS) $(LIB_INCS))
+LIB_SUBDIRS := $(foreach dir,$(LIB_SRCS),$(shell find $(dir) -type d | grep -v '/examples'))
 LIB_INCLUDES += $(addprefix -I,$(LIB_SUBDIRS))
 
 # Special handling for TinyUSB
@@ -177,8 +183,7 @@ INCLUDES := -iprefix$(ARDUINO_PICO_ROOT)/ \
            -I$(TINYUSB_PATH)/src/arduino \
            $(LIB_INCLUDES)
 
-# Automatically find and add all subdirectories under SRC_DIR
-SRC_SUBDIRS := $(shell find $(CURDIR)/$(SRC_DIR) -type d)
+SRC_SUBDIRS := $(shell find $(CURDIR)/$(SRC_DIR) -type d | grep -v '/examples/')
 INCLUDES += $(addprefix -I,$(SRC_SUBDIRS))
 
 # Core files (excluding sdkoverride)
@@ -195,8 +200,16 @@ SRC_C_FILES = $(call rwildcard,$(SRC_DIR),*.c)
 SRC_CPP_FILES = $(call rwildcard,$(SRC_DIR),*.cpp)
 
 # Library files
-LIB_C_FILES := $(foreach dir,$(LIB_SRCS),$(call rwildcard,$(dir),*.c))
-LIB_CPP_FILES := $(foreach dir,$(LIB_SRCS),$(call rwildcard,$(dir),*.cpp))
+# Library files - exclude examples directories
+LIB_C_FILES := $(filter-out %/examples/%,$(foreach dir,$(LIB_SRCS),$(call rwildcard,$(dir),*.c)))
+
+#LIB_C_FILES := $(foreach dir,$(LIB_SRCS),$(call rwildcard,$(dir),*.c))
+
+#LIB_CPP_FILES := $(foreach dir,$(LIB_SRCS),$(call rwildcard,$(dir),*.cpp))
+
+LIB_CPP_FILES := $(foreach dir,$(LIB_SRCS),$(shell find $(dir) -type f -name "*.cpp" ! -path "*/examples/*")) $(LIB_SRC_CPPS)
+
+#LIB_CPP_FILES := $(filter-out %/examples/%,$(foreach dir,$(LIB_SRCS),$(call rwildcard,$(dir),*.cpp)))
 
 #LIB_C_FILES := $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*.c)) \
                $(foreach dir,$(LIB_SRCS),$(wildcard $(dir)/*/*.c))
