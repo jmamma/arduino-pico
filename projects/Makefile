@@ -7,7 +7,7 @@ PLATFORM := PLATFORM_TBD
 
 BUILD_ARCH := RP2350
 BUILD_CHIP = rp2350
-VARIANT := rpipico2w
+VARIANT := generic_rp2350
 CHIP_VARIANT := PICO_RP2350A=0 #https://github.com/raspberrypi/pico-sdk/issues/2364
 
 ifeq ($(BUILD_CHIP),rp2350)
@@ -108,7 +108,6 @@ F_CPU ?= $(BUILD_F_CPU)
 DEFINES := $(BUILD_USBVID) \
           $(BUILD_USBPID) \
           $(BUILD_USBPWR) \
-          -D$(CHIP_VARIANT) \
           -DUSB_MANUFACTURER='$(BUILD_USB_MANUFACTURER)' \
           -DUSB_PRODUCT='$(BUILD_USB_PRODUCT)' \
           -DLWIP_IGMP=1 \
